@@ -30,7 +30,10 @@ export const useSkyStore = defineStore('sky', () => {
     return STARS.filter(s => s.name.toLowerCase().includes(q)).slice(0, 5)
   })
 
-  function projectStar(ra: number, dec: number, cx: number, cy: number, scale: number): [number, number] {
+  // Single source of truth: RA/Dec -> horizontal coords for the current
+  // viewDate + latitude. Canvas, visibility list and detail panel all
+  // derive from this so they can never disagree.
+  function altAz(ra: number, dec: number): { alt: number; az: number } {
     const ha = (localSiderealTime.value - ra) * 15 * Math.PI / 180
     const decRad = dec * Math.PI / 180
     const latRad = latitude.value * Math.PI / 180
@@ -38,11 +41,37 @@ export const useSkyStore = defineStore('sky', () => {
     const alt = Math.asin(Math.sin(decRad) * Math.sin(latRad) + Math.cos(decRad) * Math.cos(latRad) * Math.cos(ha))
     const az = Math.atan2(-Math.cos(decRad) * Math.sin(ha), Math.sin(decRad) * Math.cos(latRad) - Math.cos(decRad) * Math.sin(latRad) * Math.cos(ha))
 
-    if (alt < -0.1) return [-999, -999] // below horizon
+    return { alt: alt * 180 / Math.PI, az: (az * 180 / Math.PI + 360) % 360 }
+  }
 
-    const r = (Math.PI / 2 - alt) * scale * 0.45
-    const x = cx + panX.value + r * Math.sin(az)
-    const y = cy + panY.value - r * Math.cos(az)
+  function isVisible(ra: number, dec: number): boolean {
+    return altAz(ra, dec).alt > 0
+  }
+
+  const visibleConstellations = computed(() =>
+    CONSTELLATIONS
+      .map(c => ({
+        ...c,
+        visibleStars: c.stars.filter(i => isVisible(STARS[i].ra, STARS[i].dec)).length
+      }))
+      .filter(c => c.visibleStars > 0)
+  )
+
+  const selectedStarAltAz = computed(() => {
+    const s = selectedStar.value
+    return s ? altAz(s.ra, s.dec) : null
+  })
+
+  function projectStar(ra: number, dec: number, cx: number, cy: number, scale: number): [number, number] {
+    const { alt, az } = altAz(ra, dec)
+    const altRad = alt * Math.PI / 180
+    const azRad = az * Math.PI / 180
+
+    if (altRad < -0.1) return [-999, -999] // below horizon
+
+    const r = (Math.PI / 2 - altRad) * scale * 0.45
+    const x = cx + panX.value + r * Math.sin(azRad)
+    const y = cy + panY.value - r * Math.cos(azRad)
     return [x, y]
   }
 
@@ -72,6 +101,7 @@ export const useSkyStore = defineStore('sky', () => {
   return {
     viewDate, zoom, panX, panY, showLabels, showConstLines, showGrid,
     selectedStar, searchQuery, latitude, localSiderealTime, filteredStars,
+    altAz, isVisible, visibleConstellations, selectedStarAltAz,
     projectStar, starRadius, spectralColor, selectStar,
     STARS, CONSTELLATIONS
   }

@@ -19,7 +19,7 @@
       <!-- Time Travel -->
       <div>
         <label class="text-gray-400 text-xs">时间旅行</label>
-        <input type="datetime-local" v-model="dateStr" @input="updateDate"
+        <input type="datetime-local" v-model="dateStr"
           class="w-full bg-gray-800 rounded px-3 py-2 text-sm" />
       </div>
 
@@ -56,14 +56,25 @@
           <p>赤纬: {{ store.selectedStar.dec.toFixed(2) }}°</p>
           <p>视星等: {{ store.selectedStar.mag }}</p>
           <p>光谱型: {{ store.selectedStar.spectral }}</p>
+          <p v-if="store.selectedStarAltAz">
+            高度角: {{ store.selectedStarAltAz.alt.toFixed(1) }}° · 方位角: {{ store.selectedStarAltAz.az.toFixed(1) }}°
+          </p>
         </div>
+        <p v-if="store.selectedStarAltAz && store.selectedStarAltAz.alt < 0"
+          class="mt-2 text-xs text-red-300 bg-red-900/40 rounded px-2 py-1">
+          已落到地平线以下，当前不可见
+        </p>
       </div>
 
       <!-- Constellation list -->
       <div class="text-xs">
         <h4 class="text-gray-400 mb-1">可见星座</h4>
-        <div v-for="c in store.CONSTELLATIONS" :key="c.name" class="py-1 text-gray-300">
+        <div v-if="!store.visibleConstellations.length" class="py-1 text-gray-500">
+          当前时间与纬度下无可见星座
+        </div>
+        <div v-for="c in store.visibleConstellations" :key="c.name" class="py-1 text-gray-300">
           {{ c.nameCn }} <span class="text-gray-500">({{ c.name }})</span>
+          <span class="text-gray-500"> · {{ c.visibleStars }}/{{ c.stars.length }} 星</span>
         </div>
       </div>
 
@@ -80,11 +91,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed } from 'vue'
 import { useSkyStore } from './store/sky'
 import StarCanvas from './components/StarCanvas.vue'
 
 const store = useSkyStore()
-const dateStr = ref(new Date().toISOString().slice(0, 16))
-function updateDate() { store.viewDate = new Date(dateStr.value) }
+
+// datetime-local works in the user's local timezone, so format/parse the
+// store's viewDate in local time (not UTC) to keep input, sky and LST in sync.
+function toLocalInputValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+const dateStr = computed({
+  get: () => toLocalInputValue(store.viewDate),
+  set: (v: string) => {
+    const d = new Date(v)
+    if (!Number.isNaN(d.getTime())) store.viewDate = d
+  }
+})
 </script>
