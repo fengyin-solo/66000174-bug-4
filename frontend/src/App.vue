@@ -18,8 +18,8 @@
 
       <!-- Time Travel -->
       <div>
-        <label class="text-gray-400 text-xs">时间旅行</label>
-        <input type="datetime-local" v-model="dateStr" @input="updateDate"
+        <label class="text-gray-400 text-xs">时间旅行（本地时间 {{ timeZoneName }}）</label>
+        <input type="datetime-local" v-model="dateStr"
           class="w-full bg-gray-800 rounded px-3 py-2 text-sm" />
       </div>
 
@@ -51,9 +51,18 @@
       <!-- Star Info -->
       <div v-if="store.selectedStar" class="bg-gray-800 rounded-xl p-3">
         <h3 class="text-amber-400 font-bold">{{ store.selectedStar.name }}</h3>
+        <p v-if="store.selectedStarPosition"
+          class="mt-1 text-xs font-semibold"
+          :class="store.selectedStarPosition.visible ? 'text-green-400' : 'text-red-400'">
+          {{ store.selectedStarPosition.visible
+            ? '可见 · 位于地平线上'
+            : `不可见 · 位于地平线下 ${Math.abs(altDeg).toFixed(1)}°` }}
+        </p>
         <div class="text-xs text-gray-300 mt-2 space-y-1">
           <p>赤经: {{ store.selectedStar.ra.toFixed(2) }}h</p>
           <p>赤纬: {{ store.selectedStar.dec.toFixed(2) }}°</p>
+          <p>高度角: {{ altDeg.toFixed(1) }}°</p>
+          <p>方位角: {{ azDeg.toFixed(1) }}°</p>
           <p>视星等: {{ store.selectedStar.mag }}</p>
           <p>光谱型: {{ store.selectedStar.spectral }}</p>
         </div>
@@ -61,14 +70,18 @@
 
       <!-- Constellation list -->
       <div class="text-xs">
-        <h4 class="text-gray-400 mb-1">可见星座</h4>
-        <div v-for="c in store.CONSTELLATIONS" :key="c.name" class="py-1 text-gray-300">
-          {{ c.nameCn }} <span class="text-gray-500">({{ c.name }})</span>
+        <h4 class="text-gray-400 mb-1">可见星座（{{ store.visibleConstellations.length }}/{{ store.CONSTELLATIONS.length }}）</h4>
+        <p v-if="!store.visibleConstellations.length" class="py-1 text-gray-500">当前时刻与纬度没有可见星座</p>
+        <div v-for="item in store.visibleConstellations" :key="item.constellation.name"
+          class="py-1 text-gray-300">
+          {{ item.constellation.nameCn }} <span class="text-gray-500">({{ item.constellation.name }})</span>
+          <span class="text-gray-600">{{ item.visibleCount }}/{{ item.total }}</span>
         </div>
       </div>
 
       <div class="text-xs text-gray-500 mt-auto">
-        LST: {{ store.localSiderealTime.toFixed(2) }}h
+        <p>观测点: {{ Math.abs(store.latitude).toFixed(1) }}°{{ store.latitude >= 0 ? 'N' : 'S' }}, {{ store.longitude.toFixed(1) }}°E</p>
+        <p>本地恒星时 LST: {{ store.localSiderealTime.toFixed(2) }}h</p>
       </div>
     </div>
 
@@ -80,11 +93,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useSkyStore } from './store/sky'
+import { computed } from 'vue'
+import { useSkyStore, formatLocalDatetime, parseLocalDatetime } from './store/sky'
 import StarCanvas from './components/StarCanvas.vue'
 
 const store = useSkyStore()
-const dateStr = ref(new Date().toISOString().slice(0, 16))
-function updateDate() { store.viewDate = new Date(dateStr.value) }
+
+// datetime-local 没有时区概念，一律按用户本地时区读写，
+// 与 store.viewDate（绝对时刻）双向一致，不再经 toISOString 转成 UTC。
+const dateStr = computed({
+  get: () => formatLocalDatetime(store.viewDate),
+  set: (v: string) => {
+    const d = parseLocalDatetime(v)
+    if (d) store.viewDate = d
+  }
+})
+
+const timeZoneName = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' })
+  .formatToParts(store.viewDate).find(p => p.type === 'timeZoneName')?.value ?? '本地时区'
+
+const altDeg = computed(() => (store.selectedStarPosition?.alt ?? 0) * 180 / Math.PI)
+const azDeg = computed(() => ((store.selectedStarPosition?.az ?? 0) * 180 / Math.PI + 360) % 360)
 </script>
